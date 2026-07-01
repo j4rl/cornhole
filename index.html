@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="sv">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#f7f3ea">
+    <title>Cornhole</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://ld.j4rl.se/ld-theme-toggle.js" defer></script>
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">Först till 21</p>
+        <h1>Cornhole</h1>
+      </div>
+      <ld-theme-toggle></ld-theme-toggle>
+    </header>
+
+    <main class="app-shell">
+      <p class="notice" id="apiNotice" role="status" hidden></p>
+
+      <section class="view is-active" id="setupView" aria-labelledby="setupTitle">
+        <div class="section-heading">
+          <h2 id="setupTitle">Nytt spel</h2>
+          <button class="ghost-button" id="statsButton" type="button">Statistik</button>
+        </div>
+
+        <section class="account-panel">
+          <div>
+            <p class="eyebrow">Konto</p>
+            <strong id="accountStatus">Spelar utan konto</strong>
+          </div>
+          <button class="ghost-button" id="loginButton" type="button">Logga in</button>
+          <button class="ghost-button" id="createAccountButton" type="button">Skapa användare</button>
+          <button class="ghost-button" id="logoutButton" type="button" hidden>Logga ut</button>
+        </section>
+
+        <form class="setup-form" id="setupForm">
+          <h3>Spelare</h3>
+          <label class="sr-only" for="playerNames">Spelarnamn</label>
+          <textarea id="playerNames" rows="5" maxlength="500" placeholder="Anna&#10;Bertil"></textarea>
+          <p class="hint">Skriv ett namn per rad. Två namn startar en match. Fler än två namn startar ett slutspel när du är inloggad.</p>
+
+          <button class="primary-button" type="submit">Starta spel</button>
+        </form>
+      </section>
+
+      <section class="view" id="registerView" aria-labelledby="registerTitle">
+        <div class="game-top">
+          <button class="icon-text-button" id="closeRegisterButton" type="button">Tillbaka</button>
+          <div>
+            <p class="eyebrow">Skapa konto</p>
+            <h2 id="registerTitle">Ny användare</h2>
+          </div>
+        </div>
+
+        <form id="registerForm" class="setup-form auth-form">
+          <label for="registerUsername">Användarnamn</label>
+          <input id="registerUsername" name="username" type="text" autocomplete="username" maxlength="64">
+          <label for="registerPassword">Lösenord</label>
+          <input id="registerPassword" name="password" type="password" autocomplete="new-password">
+          <button class="primary-button" type="submit">Skapa konto</button>
+        </form>
+      </section>
+
+      <section class="view" id="gameView" aria-labelledby="gameTitle">
+        <div class="game-top">
+          <button class="icon-text-button" id="backToSetupButton" type="button" aria-label="Tillbaka till start">Tillbaka</button>
+          <div>
+            <p class="eyebrow" id="gameContext">Aktiv match</p>
+            <h2 id="gameTitle">Poängräkning</h2>
+          </div>
+        </div>
+
+        <div class="bracket-view" id="bracketView" hidden></div>
+
+        <div class="scoreboard" id="scoreboard"></div>
+
+        <div class="turn-card" id="turnCard">
+          <div class="turn-title">
+            <span>Tur</span>
+            <strong id="turnPlayer">Spelare</strong>
+          </div>
+
+          <div class="throw-buttons" aria-label="Registrera kast">
+            <button type="button" data-throw="hole">
+              <strong>Hål</strong>
+              <span>3p</span>
+            </button>
+            <button type="button" data-throw="board">
+              <strong>Bräda</strong>
+              <span>1p</span>
+            </button>
+            <button type="button" data-throw="miss">
+              <strong>Miss</strong>
+              <span>0p</span>
+            </button>
+          </div>
+
+          <div class="throw-track" id="throwTrack" aria-label="Kast denna tur"></div>
+
+          <div class="turn-summary">
+            <span>Kast: <strong id="throwsDone">0/3</strong></span>
+            <span>Poäng denna tur: <strong id="turnPoints">0</strong></span>
+          </div>
+        </div>
+
+        <div class="game-actions">
+          <button class="ghost-button" id="undoThrowButton" type="button" disabled>Ångra kast</button>
+          <button class="ghost-button" id="undoButton" type="button" disabled>Ångra tur</button>
+          <button class="ghost-button" id="newGameButton" type="button">Nytt spel</button>
+        </div>
+
+        <ol class="history-list" id="historyList" aria-label="Matchhistorik"></ol>
+      </section>
+
+      <section class="view" id="statsView" aria-labelledby="statsTitle">
+        <div class="game-top">
+          <button class="icon-text-button" id="closeStatsButton" type="button">Tillbaka</button>
+          <div>
+            <p class="eyebrow">Databasen</p>
+            <h2 id="statsTitle">Statistik</h2>
+          </div>
+        </div>
+        <div class="stats-list" id="statsList"></div>
+      </section>
+    </main>
+
+    <dialog id="winnerDialog">
+      <div class="dialog-content">
+        <p class="eyebrow">Match klar</p>
+        <h2 id="winnerTitle">Vinnare</h2>
+        <p id="winnerText"></p>
+        <div class="dialog-actions">
+          <button class="ghost-button" id="dialogSetupButton" type="button">Start</button>
+          <button class="primary-button" id="dialogReplayButton" type="button">Spela igen</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog id="authDialog">
+      <div class="dialog-content">
+        <form id="loginForm" class="auth-form">
+          <p class="eyebrow">Logga in</p>
+          <h2>Befintlig användare</h2>
+          <label for="loginUsername">Användarnamn</label>
+          <input id="loginUsername" name="username" type="text" autocomplete="username" maxlength="64">
+          <label for="loginPassword">Lösenord</label>
+          <input id="loginPassword" name="password" type="password" autocomplete="current-password">
+          <button class="primary-button" type="submit">Logga in</button>
+        </form>
+      </div>
+    </dialog>
+  </body>
+</html>

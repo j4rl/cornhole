@@ -1,2 +1,2 @@
-# cornhole
-Cornhole playedr sheet
+# CornHole
+Cornhole player sheet

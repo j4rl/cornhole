@@ -41,7 +41,25 @@
           <h3>Spelare</h3>
           <label class="sr-only" for="playerNames">Spelarnamn</label>
           <textarea id="playerNames" rows="5" maxlength="500" placeholder="Anna&#10;Bertil"></textarea>
-          <p class="hint">Skriv ett namn per rad. Två namn startar en match. Fler än två namn startar ett slutspel när du är inloggad.</p>
+          <p class="hint">Skriv ett namn per rad. Två namn startar alltid en vanlig match.</p>
+
+          <fieldset class="mode-choice">
+            <legend>Läge för fler än två spelare</legend>
+            <label>
+              <input type="radio" name="gameMode" value="race" checked>
+              <span>
+                <strong>Flerpersonsmatch</strong>
+                Först till 21 vinner.
+              </span>
+            </label>
+            <label>
+              <input type="radio" name="gameMode" value="tournament">
+              <span>
+                <strong>Turnering</strong>
+                Spela vidare tills alla placeringar är avgjorda.
+              </span>
+            </label>
+          </fieldset>
 
           <button class="primary-button" type="submit">Starta spel</button>
         </form>

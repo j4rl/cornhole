@@ -266,6 +266,44 @@ p {
   font-size: 0.9rem;
 }
 
+.mode-choice {
+  display: grid;
+  gap: 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  margin: 0;
+  padding: 0.85rem;
+}
+
+.mode-choice legend {
+  padding: 0 0.25rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.mode-choice label {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 0.65rem;
+  cursor: pointer;
+}
+
+.mode-choice input {
+  margin-top: 0.2rem;
+}
+
+.mode-choice strong {
+  display: block;
+  color: var(--text);
+}
+
+.mode-choice span {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 .bracket-view {
   display: grid;
   gap: 0.6rem;
@@ -573,6 +611,7 @@ dialog::backdrop {
   .setup-form .form-title,
   .setup-form textarea,
   .setup-form .hint,
+  .setup-form .mode-choice,
   .setup-form .primary-button {
     grid-column: 1 / -1;
   }

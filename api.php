@@ -112,6 +112,7 @@ function ensure_schema(mysqli $db): void
             games INT UNSIGNED NOT NULL DEFAULT 0,
             wins INT UNSIGNED NOT NULL DEFAULT 0,
             losses INT UNSIGNED NOT NULL DEFAULT 0,
+            tournament_wins INT UNSIGNED NOT NULL DEFAULT 0,
             points INT UNSIGNED NOT NULL DEFAULT 0,
             holes INT UNSIGNED NOT NULL DEFAULT 0,
             boards INT UNSIGNED NOT NULL DEFAULT 0,
@@ -160,6 +161,10 @@ function ensure_schema(mysqli $db): void
         $db->query("ALTER TABLE $matchesTable ADD COLUMN account_id INT UNSIGNED NULL AFTER id");
     }
 
+    if (!column_exists($db, table_name('player_stats'), 'tournament_wins')) {
+        $db->query("ALTER TABLE $statsTable ADD COLUMN tournament_wins INT UNSIGNED NOT NULL DEFAULT 0 AFTER losses");
+    }
+
     if (column_exists($db, table_name('matches'), 'winner_user_id')) {
         $db->query("ALTER TABLE $matchesTable DROP COLUMN winner_user_id");
     }
@@ -192,7 +197,7 @@ function account_id(): ?int
 function stats_for_account(mysqli $db, int $accountId): array
 {
     $stmt = $db->prepare(
-        'SELECT player_name, games, wins, losses, points, holes, boards, ground
+        'SELECT player_name, games, wins, losses, tournament_wins, points, holes, boards, ground
          FROM ' . qtable('player_stats') . '
          WHERE account_id = ?
          ORDER BY player_name'
@@ -330,8 +335,9 @@ function save_match(mysqli $db): void
     $players = $body['players'] ?? [];
     $history = $body['history'] ?? [];
     $winnerId = (string)($body['winnerId'] ?? '');
+    $isTournamentWin = (bool)($body['tournamentWin'] ?? false);
 
-    if (!is_array($players) || count($players) !== 2 || !is_array($history) || $winnerId === '') {
+    if (!is_array($players) || count($players) < 2 || !is_array($history) || $winnerId === '') {
         respond(['ok' => false, 'error' => 'Matchen saknar spelare, historik eller vinnare.'], 422);
     }
 
@@ -356,15 +362,24 @@ function save_match(mysqli $db): void
         ];
     }
 
+    if (count($normalizedPlayers) < 2) {
+        respond(['ok' => false, 'error' => 'Matchen måste ha minst två unika spelare.'], 422);
+    }
+
     if (!isset($normalizedPlayers[$winnerId])) {
         respond(['ok' => false, 'error' => 'Vinnaren finns inte i matchen.'], 422);
     }
 
     $winner = $normalizedPlayers[$winnerId];
-    $loser = array_values(array_filter(
+    $losers = array_values(array_filter(
         $normalizedPlayers,
         fn (array $player): bool => $player['id'] !== $winnerId
-    ))[0];
+    ));
+    usort(
+        $losers,
+        fn (array $left, array $right): int => $right['score'] <=> $left['score']
+    );
+    $loser = $losers[0];
 
     $accountId = account_id();
     $db->begin_transaction();
@@ -444,12 +459,13 @@ function save_match(mysqli $db): void
         if ($accountId !== null) {
             $statsStmt = $db->prepare(
                 'INSERT INTO ' . qtable('player_stats') . '
-                  (account_id, player_name, games, wins, losses, points, holes, boards, ground)
-                 VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?)
+                  (account_id, player_name, games, wins, losses, tournament_wins, points, holes, boards, ground)
+                 VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?)
                  ON DUPLICATE KEY UPDATE
                    games = games + 1,
                    wins = wins + VALUES(wins),
                    losses = losses + VALUES(losses),
+                   tournament_wins = tournament_wins + VALUES(tournament_wins),
                    points = points + VALUES(points),
                    holes = holes + VALUES(holes),
                    boards = boards + VALUES(boards),
@@ -460,6 +476,7 @@ function save_match(mysqli $db): void
                 $playerName = $player['name'];
                 $wins = $player['id'] === $winnerId ? 1 : 0;
                 $losses = $player['id'] === $winnerId ? 0 : 1;
+                $tournamentWins = $player['id'] === $winnerId && $isTournamentWin ? 1 : 0;
                 $points = $player['score'];
                 $playerStats = $stats[$playerName] ?? ['holes' => 0, 'boards' => 0, 'ground' => 0];
                 $holes = $playerStats['holes'];
@@ -467,11 +484,12 @@ function save_match(mysqli $db): void
                 $ground = $playerStats['ground'];
 
                 $statsStmt->bind_param(
-                    'isiiiiii',
+                    'isiiiiiii',
                     $accountId,
                     $playerName,
                     $wins,
                     $losses,
+                    $tournamentWins,
                     $points,
                     $holes,
                     $boards,

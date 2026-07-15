@@ -12,6 +12,7 @@ const defaultStats = () => ({
   games: 0,
   wins: 0,
   losses: 0,
+  tournamentWins: 0,
   points: 0,
   holes: 0,
   boards: 0,
@@ -108,6 +109,7 @@ function normalizeStats(row) {
       games: Number(row.games ?? 0),
       wins: Number(row.wins ?? 0),
       losses: Number(row.losses ?? 0),
+      tournamentWins: Number(row.tournament_wins ?? 0),
       points: Number(row.points ?? 0),
       holes: Number(row.holes ?? 0),
       boards: Number(row.boards ?? 0),
@@ -188,6 +190,7 @@ function startGame(players, options = {}) {
     mode: options.mode || "quick",
     context: options.context || "Aktiv match",
     tournamentMatchId: options.tournamentMatchId || null,
+    isTournamentWinMatch: Boolean(options.isTournamentWinMatch),
   };
   resetTurnInput();
   renderGame();
@@ -339,6 +342,7 @@ async function persistFinishedMatch(winner) {
         players: state.game.players,
         history: state.game.history,
         winnerId: winner.id,
+        tournamentWin: state.game.isTournamentWinMatch,
       }),
     });
     await loadSession();
@@ -360,14 +364,14 @@ async function finishGame(winner) {
     if (next.type === "complete") {
       state.nextDialogAction = "replayTournament";
       state.nextTournamentMatch = null;
-      els.dialogReplayButton.textContent = "Spela slutspel igen";
-      els.winnerTitle.textContent = `${next.winner.name} vinner finalen`;
-      els.winnerText.textContent = "Slutspelet är klart.";
+      els.dialogReplayButton.textContent = "Spela turnering igen";
+      els.winnerTitle.textContent = `${next.winner.name} vinner turneringen`;
+      els.winnerText.textContent = `Slutplacering: ${formatPlacements(next.placements)}.`;
     } else {
       state.nextDialogAction = "nextTournamentMatch";
       state.nextTournamentMatch = next.match;
       els.dialogReplayButton.textContent = "Nästa match";
-      els.winnerTitle.textContent = `${winner.name} går vidare`;
+      els.winnerTitle.textContent = `${winner.name} vinner matchen`;
       els.winnerText.textContent = `${winner.score}-${loser.score}. Nästa match: ${next.match.p1.name} mot ${next.match.p2.name}.`;
     }
   } else {
@@ -375,7 +379,9 @@ async function finishGame(winner) {
     state.nextTournamentMatch = null;
     els.dialogReplayButton.textContent = "Spela igen";
     els.winnerTitle.textContent = `${winner.name} vinner`;
-    els.winnerText.textContent = loser
+    els.winnerText.textContent = state.game.players.length > 2
+      ? `Slutställning: ${formatGameScores(state.game.players)}. ${state.account ? "Statistik sparad." : "Logga in för att spara statistik."}`
+      : loser
       ? `${winner.score}-${loser.score}. ${state.account ? "Statistik sparad." : "Logga in för att spara statistik."}`
       : `${winner.score} poäng.`;
   }
@@ -384,17 +390,53 @@ async function finishGame(winner) {
   els.winnerDialog.showModal();
 }
 
-function stageLabel(playerCount) {
-  if (playerCount <= 2) return "Final";
-  if (playerCount <= 4) return "Semifinal";
-  if (playerCount <= 8) return "Kvartsfinal";
-  if (playerCount <= 16) return "Åttondelsfinal";
-  return "Omgång";
+function placeRangeLabel(start, end) {
+  return start === end ? `Plats ${start}` : `Platser ${start}-${end}`;
 }
 
-function createTournamentRound(players) {
+function formatPlacements(placements = state.tournament?.placements || []) {
+  return [...placements]
+    .sort((left, right) => left.place - right.place)
+    .map((placement) => `${placement.place}. ${placement.player.name}`)
+    .join(", ");
+}
+
+function formatGameScores(players) {
+  return [...players]
+    .sort((left, right) => right.score - left.score)
+    .map((player) => `${player.name} ${player.score}`)
+    .join(", ");
+}
+
+function tournamentPlayerById(playerId, players) {
+  return players.find((player) => player && player.id === playerId) || null;
+}
+
+function placePlayer(player, place) {
+  if (!player || !state.tournament) return;
+  if (state.tournament.placements.some((placement) => placement.player.id === player.id)) return;
+  state.tournament.placements.push({ place, player });
+}
+
+function createPlacementGroup(players, placementStart) {
+  if (!state.tournament || players.length === 0) return;
+
+  if (players.length === 1) {
+    placePlayer(players[0], placementStart);
+    return;
+  }
+
+  createTournamentRound(players, placementStart);
+}
+
+function createTournamentRound(players, placementStart) {
+  const placementEnd = placementStart + players.length - 1;
   const round = {
-    label: stageLabel(players.length),
+    id: crypto.randomUUID(),
+    label: placeRangeLabel(placementStart, placementEnd),
+    placementStart,
+    placementEnd,
+    processed: false,
     matches: [],
   };
 
@@ -407,6 +449,7 @@ function createTournamentRound(players) {
       p2,
       status: p2 ? "pending" : "bye",
       winnerId: p2 ? null : p1.id,
+      loserId: null,
       p1Score: null,
       p2Score: null,
     });
@@ -420,12 +463,14 @@ function startTournament(players) {
     players,
     rounds: [],
     currentMatchId: null,
+    placements: [],
   };
 
-  createTournamentRound(players);
-  const match = getNextPendingTournamentMatch();
-  if (!match) return;
-  startTournamentMatch(match);
+  createPlacementGroup(players, 1);
+  const next = advanceTournament();
+  if (next.type === "next") {
+    startTournamentMatch(next.match);
+  }
 }
 
 function getNextPendingTournamentMatch() {
@@ -450,6 +495,7 @@ function startTournamentMatch(match) {
     mode: "tournament",
     context: round?.label || "Slutspel",
     tournamentMatchId: match.id,
+    isTournamentWinMatch: round?.placementStart === 1 && round?.placementEnd === 2,
   });
 }
 
@@ -464,25 +510,48 @@ function completeTournamentMatch(winner) {
   const p2 = state.game.players[1];
   match.status = "complete";
   match.winnerId = winner.id;
+  match.loserId = winner.id === p1.id ? p2.id : p1.id;
   match.p1Score = p1.score;
   match.p2Score = p2.score;
+}
+
+function processCompletedRound(round) {
+  if (!state.tournament || round.processed) return;
+
+  const winners = [];
+  const losers = [];
+
+  round.matches.forEach((match) => {
+    const players = [match.p1, match.p2].filter(Boolean);
+    const winner = tournamentPlayerById(match.winnerId, players);
+    const loser = tournamentPlayerById(match.loserId, players);
+
+    if (winner) winners.push(winner);
+    if (loser) losers.push(loser);
+  });
+
+  round.processed = true;
+
+  createPlacementGroup(winners, round.placementStart);
+  createPlacementGroup(losers, round.placementStart + winners.length);
 }
 
 function advanceTournament() {
   const pending = getNextPendingTournamentMatch();
   if (pending) return { type: "next", match: pending };
 
-  const lastRound = state.tournament.rounds.at(-1);
-  const winners = lastRound.matches
-    .map((match) => [match.p1, match.p2].find((player) => player && player.id === match.winnerId))
-    .filter(Boolean);
-
-  if (winners.length === 1) {
-    return { type: "complete", winner: winners[0] };
+  const unprocessed = state.tournament.rounds.find((round) => !round.processed);
+  if (unprocessed) {
+    processCompletedRound(unprocessed);
+    return advanceTournament();
   }
 
-  createTournamentRound(winners);
-  return advanceTournament();
+  const placements = [...state.tournament.placements].sort((left, right) => left.place - right.place);
+  if (placements.length === state.tournament.players.length) {
+    return { type: "complete", winner: placements[0].player, placements };
+  }
+
+  return { type: "complete", winner: placements[0]?.player || state.tournament.players[0], placements };
 }
 
 function renderBracket() {
@@ -527,6 +596,36 @@ function renderBracket() {
       return section;
     }),
   );
+
+  if (state.tournament.placements.length > 0) {
+    const section = document.createElement("section");
+    section.className = "bracket-round";
+
+    const title = document.createElement("h3");
+    title.textContent = "Placeringar";
+    section.append(title);
+
+    [...state.tournament.placements]
+      .sort((left, right) => left.place - right.place)
+      .forEach((placement) => {
+        const row = document.createElement("div");
+        row.className = "bracket-match";
+
+        const place = document.createElement("strong");
+        place.textContent = `${placement.place}.`;
+
+        const middle = document.createElement("span");
+        middle.textContent = "klar";
+
+        const name = document.createElement("span");
+        name.textContent = placement.player.name;
+
+        row.append(place, middle, name);
+        section.append(row);
+      });
+
+    els.bracketView.append(section);
+  }
 }
 
 function renderStats() {
@@ -561,6 +660,7 @@ function renderStats() {
         ["Matcher", player.stats.games],
         ["Vinster", player.stats.wins],
         ["Förluster", player.stats.losses],
+        ["Turneringsvinster", player.stats.tournamentWins],
         ["Poäng", player.stats.points],
         ["I hål", player.stats.holes],
         ["På bräda", player.stats.boards],
@@ -645,8 +745,10 @@ els.setupForm.addEventListener("submit", (event) => {
     return;
   }
 
-  if (names.length > 2 && !state.account) {
-    showNotice("Logga in för att spela slutspel med fler än två spelare.", true);
+  const gameMode = String(new FormData(els.setupForm).get("gameMode") || "race");
+
+  if (names.length > 2 && gameMode === "tournament" && !state.account) {
+    showNotice("Logga in för att spela turnering med sparad statistik.", true);
     return;
   }
 
@@ -656,6 +758,12 @@ els.setupForm.addEventListener("submit", (event) => {
   if (players.length === 2) {
     state.tournament = null;
     startGame(players);
+  } else if (gameMode === "race") {
+    state.tournament = null;
+    startGame(players, {
+      mode: "multi",
+      context: "Flerpersonsmatch",
+    });
   } else {
     startTournament(players);
   }
